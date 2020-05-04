@@ -17,4 +17,4 @@
 - Utilize o comando `make runc` para rodar o cliente
 
 ### Observações Adicionais
-- Foi utilizado o comando `g++` para compilar os arquivos, pois `gcc` estava causando o erro `undefined reference to `std::ios_base::Init::Init()'` 
+- Foi utilizado o comando `g++` para compilar os arquivos, pois `gcc` estava causando o erro `undefined reference to 'std::ios_base::Init::Init()'` 
