@@ -42,7 +42,7 @@ bool connect (int *socket_status, struct sockaddr_in *ServerAddress, string *cli
 		cout << "Creating Failed\n";
 		return false;
 	}
-
+ 
 	ServerAddress->sin_family = AF_INET;
 	ServerAddress->sin_port = htons(8080);
 
