@@ -1,131 +1,112 @@
-#include <unistd.h> 
-#include <iostream> 
-#include <sys/socket.h> 
-#include <stdlib.h> 
-#include <netinet/in.h> 
-#include <string.h> 
-#include <string> 
-#include <sstream>
-#include <queue>
-#include <cstdlib>
+#include <stdio.h>
+#include <iostream>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <string>
+#include <thread>
 #include <csignal>
+
+#define PORT 5000  
+#define BUFFER_SIZE 4096
 
 using namespace std;
 
-// Função para parsear a mensagem em blocos de 4096 caracteres
-queue<string> parseMessage() {
-    queue<string> texts;
-    string input;
-    getline(cin, input);
-    istringstream iss(input);
-    string phrase;
-    string buffer;
-    while (getline(iss, phrase, '.')) {
-        phrase.append(".");
-        if (buffer.length() + phrase.length() > 4096) {
-            texts.push(buffer);
-            buffer = "";
+bool send_msg(int sock, string userInput){
+    int sendRes = send(sock, userInput.c_str(), userInput.size(), 0);
+    if(sendRes == -1)
+        return false;
+    return true;
+}
+
+int receive_msg(int sock, char buffer[BUFFER_SIZE]){
+    memset(buffer, 0, BUFFER_SIZE);
+    int bytesRecv = recv(sock, buffer, BUFFER_SIZE, 0);
+    return bytesRecv;
+}
+
+void routine(int sock){
+    while(1){
+        char buffer[BUFFER_SIZE];
+        int n = receive_msg(sock, buffer);
+        if(n > 0){
+            buffer[n] = '\0';
+            printf("%s\n", buffer);
+        }else if(n == -1){
+            exit(EXIT_FAILURE);
         }
-        buffer.append(phrase);
     }
-    texts.push(buffer);
-
-    return texts;
 }
 
-bool connect (int *socket_status, struct sockaddr_in *ServerAddress, string *clientId) {
-	// Criando um socket
-	*socket_status = socket(AF_INET, SOCK_STREAM, 0);
-
-	// Se a funcao anterior retorna -1 o novo servidor nao pode ser criado
-	if(*socket_status == -1){
-		cout << "Creating Failed\n";
-		return false;
-	}
- 
-	ServerAddress->sin_family = AF_INET;
-	ServerAddress->sin_port = htons(8080);
-
-	//Conectando o cliente a porta 8080
-	int retConnect = connect(*socket_status, (struct sockaddr*) ServerAddress, sizeof *ServerAddress);
-	if(retConnect == -1){
-		cout << "Connection Failed\n";
-		return false;
-	}
-
-	char serverMessage[4097]; // variável que armazena a mensagem do servidor
-	memset(serverMessage, 0, sizeof serverMessage); // inicializando a variável da mensagem
-	read(*socket_status, serverMessage, sizeof serverMessage); // recebendo a mensagem de boas vindas do servidor para testes
-
-	*clientId = serverMessage; // o servidor responde com o clientId do novo cliente
-	
-	return true;
-}
-
+// Ignores ctrl-c command
 void ctrlHandler(int signum){
 	signal(SIGINT, ctrlHandler);
-	cout << "Ignoring ctrl-c command." << endl;
 }
 
-int main(){
+int main(int argc, char const *argv[]){
 
-	signal(SIGINT, ctrlHandler);
+    signal(SIGINT, ctrlHandler); // Ignores ctrl-c command
 
-	//Setup do socket
-	int socket_status;
-	struct sockaddr_in ServerAddress;
+    char buffer[BUFFER_SIZE];
+    int sock = 0; 
+    string userInput;
+    char userName[50] = {0};
+    
+    string ipAdress = "127.0.0.1"; // IP adress to connect
+    sockaddr_in hint;
+    hint.sin_family = AF_INET;
+    hint.sin_port = htons(PORT);
+    inet_pton(AF_INET, ipAdress.c_str(), &hint.sin_addr);
 
-	bool quit = false;
-	bool connected = false;
+    // require connection first
+    cout << "Welcome! Use the command /connect to connect to the server.\n";
+    do{ 
+        getline(cin, userInput);
+        if(userInput.compare("/connect")==0){
+            // Create socket
+            sock = socket(AF_INET, SOCK_STREAM, 0);
 
-	string clientId;
+            if(sock == -1){
+                cerr << "ALERT: Failed at creating socket!" << endl;
+                exit(EXIT_FAILURE);
+            }
+            // Connect to server
+            int connectRes = connect(sock, (sockaddr*) &hint, sizeof(hint));
 
-    queue<string> message; // inicializa a variável que guardará a mensagem em filas de 4096 caracteres
- 
- 	char serverMessage[4097]; // variável que armazena a mensagem do servidor
-    while(true) {
-        message = parseMessage();
-		
-		if (message.size() == 1 && !message.front().compare("/quit.")) {
-            quit = true;
+            if(connectRes == -1){
+                cerr << "ALERT: Failed to connect to server!" << endl;
+                exit(EXIT_FAILURE);
+            }           
+
+            cout << "ALERT: Connected to server successfully!" << endl;
+            cout << "Choose your nickname now with the command /nickname" << endl;
+        }else if(userInput.compare("/quit")==0){
+            exit(EXIT_SUCCESS);
+        }else if(sock == 0){
+            cout << "ALERT: You must first connect to the server!" << endl;
         }
+    }while(sock == 0);
 
-		if(quit) break;
+    thread th(routine, sock); // keeps geting msgs in the background
 
-        // envia a mensagem para o servidor
-        while(!message.empty()) {
-			char msg_aux[4096]; 
-			strcpy(msg_aux,  message.front().c_str());
+    // command loops and messages
+    cout << "Use the command /join to join a room!" << endl;
+    while(1){
+        sleep(0.1);
+        getline(cin, userInput);
 
-			if (msg_aux[0] == '/') {
-				if (!strcmp(msg_aux, "/connect.")) {
-					connected = connect(&socket_status, &ServerAddress, &clientId);
-				}
-			}
-
-			if (connected) {
-				string msg = clientId + ": " + msg_aux;
-		    	send(socket_status, msg.c_str() , strlen(msg.c_str()), 0);
-			} else {
-				cout << "Você ainda não está conectado! Use o comando /connect" << endl;
-				break;
-			}
-
-            message.pop();
+        if (userInput.compare("/quit") == 0){
+            close(sock);
+            exit(EXIT_SUCCESS);
+        }else{
+            if(!send_msg(sock, userInput)){
+                cout << "ALERT: Error at sending msg!" << endl;
+            }
         }
+    }
 
-		memset(serverMessage, 0, sizeof serverMessage); // zerando a variavel da resposta do servidor
-		
-		if (connected) {
-			int server = read(socket_status, serverMessage, sizeof serverMessage);
-			if (server <= 0){
-				break;
-			}
-		}
-
-		cout << serverMessage << endl;
-	}
-
-	close(socket_status); //fecha o socket
-	return 0;
+    return 0;
 }
